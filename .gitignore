@@ -3,27 +3,23 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Secrets / env
 .env
 
 # Virtual env
 venv/
 env/
-.projet_iris/
 
 # Jupyter
 .ipynb_checkpoints/
 
-# MLflow
+# MLflow runtime data
 mlruns/
 mlflow_data/
-databases/
 
-# Docker
+# Logs
 *.log
 
 # OS
 .DS_Store
-
-# scripts 
-scripts/
-shared/
