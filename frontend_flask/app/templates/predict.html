@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Prédiction Iris</h2>
+
+<form method="POST" class="form-card">
+    <label>Sepal Length</label>
+    <input type="number" step="0.01" name="sepal_length" required>
+
+    <label>Sepal Width</label>
+    <input type="number" step="0.01" name="sepal_width" required>
+
+    <label>Petal Length</label>
+    <input type="number" step="0.01" name="petal_length" required>
+
+    <label>Petal Width</label>
+    <input type="number" step="0.01" name="petal_width" required>
+
+    <button type="submit">Prédire</button>
+</form>
+
+{% if prediction_result %}
+<div class="result-card">
+    <h3>Résultat</h3>
+    <p><strong>Classe prédite :</strong> {{ prediction_result }}</p>
+    <p><strong>ID prédiction :</strong> {{ prediction_id }}</p>
+
+    <div class="feedback-section">
+        <p><strong>La prédiction est-elle correcte ?</strong></p>
+
+        <div class="thumb-feedback">
+            <form method="POST" action="{{ url_for('prediction.feedback', prediction_id=prediction_id, is_correct='true') }}">
+                <input type="hidden" name="true_label" value="{{ prediction_result }}">
+                <button type="submit" class="thumb-btn thumb-up" title="Prédiction correcte">👍</button>
+            </form>
+
+            <button type="button" class="thumb-btn thumb-down" onclick="toggleFalseFeedback()" title="Prédiction incorrecte">👎</button>
+        </div>
+
+        <div id="false-feedback-form" class="false-feedback-form" style="display: none;">
+            <form method="POST" action="{{ url_for('prediction.feedback', prediction_id=prediction_id, is_correct='false') }}">
+                <label>Choisir la vraie classe :</label>
+                <select name="true_label" required>
+                    <option value="">Choisir</option>
+                    <option value="setosa">setosa</option>
+                    <option value="versicolor">versicolor</option>
+                    <option value="virginica">virginica</option>
+                </select>
+                <button type="submit" class="btn-danger">Envoyer le feedback</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleFalseFeedback() {
+    const form = document.getElementById("false-feedback-form");
+    if (form.style.display === "none") {
+        form.style.display = "block";
+    } else {
+        form.style.display = "none";
+    }
+}
+</script>
+{% endif %}
+{% endblock %}

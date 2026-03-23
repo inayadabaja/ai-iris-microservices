@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Projet IA Iris</h1>
+<p>Bienvenue dans l'application de prédiction Iris.</p>
+<div class="actions">
+    <a class="btn" href="{{ url_for('auth.signup') }}">Créer un compte</a>
+    <a class="btn" href="{{ url_for('auth.login') }}">Se connecter</a>
+</div>
+{% endblock %}

@@ -1,0 +1,262 @@
+version: "3.9"
+
+services:
+  postgres_raw_db:
+    image: postgres:15
+    container_name: postgres_raw_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${RAW_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${RAW_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${RAW_POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_raw_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${RAW_POSTGRES_USER} -d ${RAW_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres_processed_db:
+    image: postgres:15
+    container_name: postgres_processed_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${PROCESSED_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${PROCESSED_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${PROCESSED_POSTGRES_DB}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_processed_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PROCESSED_POSTGRES_USER} -d ${PROCESSED_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres_app_db:
+    image: postgres:15
+    container_name: postgres_app_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${APP_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${APP_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${APP_POSTGRES_DB}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_app_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${APP_POSTGRES_USER} -d ${APP_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mlflow_server:
+    image: python:3.11-slim
+    container_name: mlflow_server
+    restart: always
+    working_dir: /app
+    command: >
+      sh -c "pip install --no-cache-dir mlflow psycopg2-binary &&
+             mlflow server
+             --host 0.0.0.0
+             --port 5000
+             --backend-store-uri sqlite:///mlflow.db
+             --default-artifact-root /app/mlruns"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/app/mlruns
+      - ./mlruns:/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  ingestion_service:
+    build:
+      context: ./services/ingestion_service
+      dockerfile: Dockerfile
+    container_name: ingestion_service
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${RAW_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${RAW_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${RAW_POSTGRES_DB}
+      POSTGRES_HOST: postgres_raw_db
+      POSTGRES_PORT: 5432
+      CSV_FILE_PATH: /app/data/raw/iris.csv
+      INGESTION_SERVICE_HOST: 0.0.0.0
+      INGESTION_SERVICE_PORT: 8001
+    depends_on:
+      postgres_raw_db:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  preprocessing_service:
+    build:
+      context: ./services/preprocessing_service
+      dockerfile: Dockerfile
+    container_name: preprocessing_service
+    restart: always
+    env_file:
+      - .env
+    environment:
+      RAW_POSTGRES_USER: ${RAW_POSTGRES_USER}
+      RAW_POSTGRES_PASSWORD: ${RAW_POSTGRES_PASSWORD}
+      RAW_POSTGRES_DB: ${RAW_POSTGRES_DB}
+      RAW_POSTGRES_HOST: postgres_raw_db
+      RAW_POSTGRES_PORT: 5432
+
+      PROCESSED_POSTGRES_USER: ${PROCESSED_POSTGRES_USER}
+      PROCESSED_POSTGRES_PASSWORD: ${PROCESSED_POSTGRES_PASSWORD}
+      PROCESSED_POSTGRES_DB: ${PROCESSED_POSTGRES_DB}
+      PROCESSED_POSTGRES_HOST: postgres_processed_db
+      PROCESSED_POSTGRES_PORT: 5432
+
+      PREPROCESSING_SERVICE_HOST: 0.0.0.0
+      PREPROCESSING_SERVICE_PORT: 8002
+    depends_on:
+      postgres_raw_db:
+        condition: service_healthy
+      postgres_processed_db:
+        condition: service_healthy
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  training_service:
+    build:
+      context: ./services/training_service
+      dockerfile: Dockerfile
+    container_name: training_service
+    restart: always
+    env_file:
+      - .env
+    environment:
+      PROCESSED_POSTGRES_USER: ${PROCESSED_POSTGRES_USER}
+      PROCESSED_POSTGRES_PASSWORD: ${PROCESSED_POSTGRES_PASSWORD}
+      PROCESSED_POSTGRES_DB: ${PROCESSED_POSTGRES_DB}
+      PROCESSED_POSTGRES_HOST: postgres_processed_db
+      PROCESSED_POSTGRES_PORT: 5432
+
+      TRAINING_SERVICE_HOST: 0.0.0.0
+      TRAINING_SERVICE_PORT: 8003
+
+      MLFLOW_TRACKING_URI: http://mlflow_server:5000
+      MLFLOW_EXPERIMENT_NAME: ${MLFLOW_EXPERIMENT_NAME}
+      MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME}
+    depends_on:
+      postgres_processed_db:
+        condition: service_healthy
+      mlflow_server:
+        condition: service_healthy
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./mlruns:/app/mlruns
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  prediction_service:
+    build:
+      context: ./services/prediction_service
+      dockerfile: Dockerfile
+    container_name: prediction_service
+    restart: always
+    env_file:
+      - .env
+    environment:
+      APP_POSTGRES_USER: ${APP_POSTGRES_USER}
+      APP_POSTGRES_PASSWORD: ${APP_POSTGRES_PASSWORD}
+      APP_POSTGRES_DB: ${APP_POSTGRES_DB}
+      APP_POSTGRES_HOST: postgres_app_db
+      APP_POSTGRES_PORT: 5432
+
+      PREDICTION_SERVICE_HOST: 0.0.0.0
+      PREDICTION_SERVICE_PORT: 8004
+
+      MLFLOW_TRACKING_URI: http://mlflow_server:5000
+      MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME}
+    depends_on:
+      postgres_app_db:
+        condition: service_healthy
+      mlflow_server:
+        condition: service_healthy
+      training_service:
+        condition: service_healthy
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./mlruns:/app/mlruns
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  frontend_flask:
+    build:
+      context: ./frontend_flask
+      dockerfile: Dockerfile
+    container_name: frontend_flask
+    restart: always
+    env_file:
+      - .env
+    environment:
+      APP_POSTGRES_USER: ${APP_POSTGRES_USER}
+      APP_POSTGRES_PASSWORD: ${APP_POSTGRES_PASSWORD}
+      APP_POSTGRES_DB: ${APP_POSTGRES_DB}
+      APP_POSTGRES_HOST: postgres_app_db
+      APP_POSTGRES_PORT: 5432
+
+      FRONTEND_HOST: 0.0.0.0
+      FRONTEND_PORT: 5001
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY}
+
+      PREDICTION_API_URL: http://prediction_service:8004
+    depends_on:
+      postgres_app_db:
+        condition: service_healthy
+      prediction_service:
+        condition: service_healthy
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  postgres_raw_data:
+  postgres_processed_data:
+  postgres_app_data:
