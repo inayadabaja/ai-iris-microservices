@@ -2,8 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.database import engine, SessionLocal
-from app.models.raw_data_model import Base
+from app.core.database import SessionLocal
 from app.schemas.raw_data_schema import RawDataResponse
 from app.services.csv_reader import CSVReader
 from app.services.data_cleaner import DataCleaner
@@ -11,8 +10,6 @@ from app.repositories.raw_data_repository import RawDataRepository
 from app.services.ingestion_service import IngestionService
 
 router = APIRouter()
-
-Base.metadata.create_all(bind=engine)
 
 
 def get_db():
@@ -38,6 +35,7 @@ def ingest_data(db: Session = Depends(get_db)):
 
     try:
         inserted_count = service.ingest(db, settings.CSV_FILE_PATH)
+
         return RawDataResponse(
             message="Data ingested successfully",
             rows_inserted=inserted_count

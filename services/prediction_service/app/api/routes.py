@@ -1,9 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.database import app_engine, AppSessionLocal
-from app.models.prediction_model import Base
-from app.models.feedback_model import Feedback
+from app.core.database import AppSessionLocal
 from app.schemas.prediction_request import PredictionRequest
 from app.schemas.prediction_response import PredictionResponse
 from app.schemas.feedback_schema import FeedbackRequest, FeedbackResponse
@@ -14,8 +12,6 @@ from app.services.prediction_service import PredictionService
 from app.services.feedback_service import FeedbackService
 
 router = APIRouter()
-
-Base.metadata.create_all(bind=app_engine)
 
 
 def get_app_db():
@@ -29,6 +25,7 @@ def get_app_db():
 @router.get("/")
 def root():
     return {"message": "Prediction Service is running"}
+
 
 @router.post("/predict", response_model=PredictionResponse)
 def predict(
@@ -57,7 +54,8 @@ def predict(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
-    
+
+
 @router.post("/feedback", response_model=FeedbackResponse)
 def create_feedback(
     request: FeedbackRequest,
@@ -81,6 +79,7 @@ def create_feedback(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Feedback error: {str(e)}")
+
 
 @router.get("/predictions")
 def get_predictions(db: Session = Depends(get_app_db)):
